@@ -6,145 +6,93 @@
 #define TITLE_MAX 128
 #define NAME_MAX  64
 #define RECHEAP_CAPACITY 64      
-/* Παγκόσμια θέση προβολών (ορίζεται από την εντολή S <slots>)
-   Φροντίστε να το κάνετε define στο αντίστοιχο .c αρχείο, ως
-   int SLOTS;
-*/
+
+/* Global display slots (set via command S) */
 extern int SLOTS;
 
-/* -----------------------------------------
-   LOAN: ενεργός δανεισμός (unsorted, O(1) insert/remove)
-   Λίστα ανά Member με χρήση sentinel node.
-   ----------------------------------------- */
+/* Active loan record */
 typedef struct loan {
-   int sid;            /* member id (ιδιοκτήτης της λίστας) */
-   int bid;            /* book id που έχει δανειστεί */
-   struct loan *next;  /* επόμενος δανεισμός του μέλους */
+   int sid;            /* Member ID */
+   int bid;            /* Book ID */
+   struct loan *next;  /* Next member loan */
 } loan_t;
 
-/* -----------------------------------------
-   BOOK: βιβλίο
-   - Ανήκει σε ακριβώς ένα Genre (gid)
-   - Συμμετέχει στη διπλά συνδεδεμένη λίστα του Genre,
-     ταξινομημένη φθίνοντα κατά avg.
-   ----------------------------------------- */
+/* Book record (sorted by avg desc in genre) */
 typedef struct book {
-   int  bid;                         /* book id (μοναδικό) */
-   int  gid;                         /* genre id (ιδιοκτησία λίστας) */
-   char title[TITLE_MAX];
+   int  bid;                         /* Unique Book ID */
+   int  gid;                         /* Genre ID */
+   char title[TITLE_MAX];            /* Book title */
 
-   int heap_pos; /* Have -1 if its not in the heap */    
+   int heap_pos;                     /* Heap index (-1 if absent) */
 
-   /* Στατιστικά δημοτικότητας */
-   int sum_scores;                   /* άθροισμα έγκυρων βαθμολογιών */
-   int n_reviews;                    /* πλήθος έγκυρων βαθμολογιών */
-   int avg;                          /* cache: floor(sum_scores / n_reviews); 0 αν n_reviews=0 */
-   int lost_flag;                    /* 1 αν δηλωμένο lost, αλλιώς 0 */
+   /* Review stats */
+   int sum_scores;                   /* Total valid rating points */
+   int n_reviews;                    /* Total valid reviews */
+   int avg;                          /* Cached average rating */
+   int lost_flag;                    /* Lost status (1=lost, 0=active) */
 
-   /* Διπλά συνδεδεμένη λίστα του genre, ταξινομημένη κατά avg (desc). */
+   /* Genre doubly-linked list */
    struct book *prev;
    struct book *next;
-
-   /* Προαιρετικό: συνδέσεις σε global ευρετήρια αν κρατήσετε (όχι απαραίτητο) */
-   // struct book *next_global;         /* π.χ. unsorted λίστα όλων των βιβλίων */
 } book_t;
 
+/* Member activity metrics */
 typedef struct MemberActivity { 
-   int sid;
-   int loans_count;
-   int reviews_count;
-   int score_sum;
-   struct MemberActivity *next;
+   int sid;                          /* Member ID */
+   int loans_count;                  /* Total loans */
+   int reviews_count;                /* Total reviews */
+   int score_sum;                    /* Total review score sum */
+   struct MemberActivity *next;      /* Next member activity */
 } member_activity_t;
 
-/* -----------------------------------------
-   MEMBER: μέλος βιβλιοθήκης
-   - Κρατά unsorted λίστα ενεργών δανεισμών (loan_t) με χρήση sentinel node
-   ----------------------------------------- */
+/* Library member */
 typedef struct member {
-   int  sid;                         /* member id (μοναδικό) */
-   char name[NAME_MAX];
+   int  sid;                         /* Unique Member ID */
+   char name[NAME_MAX];              /* Member name */
 
-   /* Λίστα ενεργών δανεισμών:
-      Uns. singly-linked με sentinel node:
-      - Εισαγωγή: O(1) push-front
-      - Διαγραφή γνωστού bid: O(1) αν κρατάτε prev pointer στη σάρωση */
-   loan_t* loans;
-   member_activity_t *activity; /* μονοσυνδεδεμένη λίστα με activity ανά μέλος */   
-   /* Μονοσυνδεδεμένη λίστα όλων των μελών ταξινομημένη κατά sid */
-   struct member *next;
+   loan_t* loans;                    /* Active loans sentinel list */
+   member_activity_t *activity;      /* Member activity tracking */   
+   struct member *next;              /* Sorted member list */
 } member_t;
 
+/* Title lookup AVL node */
 typedef struct BookIndex { 
-   char title[TITLE_MAX];
-   book_t *book;
-   struct BookIndex *lc;
-   struct BookIndex *rc;
-   int height;
-} book_index_t;
+   char title[TITLE_MAX];            /* Book title */ 
+   book_t *book;                     /* Pointer to book record */
+   struct BookIndex *lc;             /* Left child */
+   struct BookIndex *rc;             /* Right child */
+   int height;                       /* Height of the node */
+} book_index_t;                      
 
-/* -----------------------------------------
-   GENRE: κατηγορία βιβλίων
-   - Κρατά ΔΙΠΛΑ συνδεδεμένη λίστα ΒΙΒΛΙΩΝ ταξινομημένη κατά avg (desc)
-   - Κρατά και το αποτέλεσμα της τελευταίας D (display) για εκτύπωση PD
-   ----------------------------------------- */
+/* Book genre category */
 typedef struct genre {
-   int  gid;                         /* genre id (μοναδικό) */
-   char name[NAME_MAX];
+   int  gid;                         /* Unique Genre ID */
+   char name[NAME_MAX];              /* Genre name */
 
-   /* διπλά συνδεδεμένη λίστα βιβλίων ταξινομημένη κατά avg φθίνουσα. */
-   book_t* books;
-   book_index_t *book_index;      /* root κόμβος AVL δέντρου για εύρεση βιβλίων με τίτλο */ 
-   int lost_count;
-   int invalid_count;
+   book_t* books;                    /* Head of books (sorted by avg desc) */
+   book_index_t *book_index;         /* Title lookup AVL root */ 
+   int lost_count;                   /* Count of lost books in genre */
+   int invalid_count;                /* Count of invalid books in genre */
 
-   /* Αποτέλεσμα τελευταίας κατανομής D: επιλεγμένα βιβλία για προβολή.
-       Αποθηκεύουμε απλώς pointers στα book_t (δεν αντιγράφουμε δεδομένα). */
-   int slots;            /* πόσα επιλέχθηκαν για προβολή σε αυτό το genre */
-   book_t **display;     /* δυναμικός πίνακας με pointers στα επιλεγμένα βιβλία για προβολή */
+   /* Cached display allocation */
+   int slots;                        /* Assigned display slots */
+   book_t **display;                 /* Pointers to displayed books */
 
-   /* Μονοσυνδεδεμένη λίστα όλων των genres ταξινομημένη κατά gid (για εύκολη σάρωση). */
-   struct genre *next;
+   struct genre *next;               /* Sorted genre list */
 } genre_t;
 
-typedef struct RecHeap{
-   book_t *heap[RECHEAP_CAPACITY];
-   int size;
+/* Top recommendations max-heap */
+typedef struct RecHeap {
+   book_t *heap[RECHEAP_CAPACITY];   /* Heap array of book pointers */
+   int size;                         /* Current number of books in heap */
 } recheap_t;
 
-/* -----------------------------------------
-   LIBRARY: κεντρικός "ρίζας"
-   - Κρατά λίστα Genres (sorted by gid)
-   - Κρατά λίστα Members (sorted by sid)
-   ----------------------------------------- */
+/* Main library root structure */
 typedef struct library {
-   genre_t  *genres;     /* κεφαλή λίστας genres (sorted by gid) */
-   member_t *members;    /* διπλά συνδεδεμένη λίστα μελών (sorted by sid) */
-   member_activity_t *activity; /* μονοσυνδεδεμένη λίστα με activity ανά μέλος */   
-   recheap_t *recommendations; /* τα πιο δημοφιλή βιβλία  */   
+   genre_t  *genres;                 /* Genre list (sorted by gid) */
+   member_t *members;                /* Member list (sorted by sid) */
+   member_activity_t *activity;      /* Global activity list */   
+   recheap_t *recommendations;       /* Recommendation heap */   
 } library_t;
-
-/* ==================================
-   ΒΟΗΘΗΤΙΚΕΣ ΣΥΜΒΑΣΕΙΣ & INVARIANTS
-   ==================================
-
-   ΕΙΣΑΓΩΓΗ βιβλίου σε genre (μετά από αλλαγή avg):
-   - Επανατοποθέτηση με τοπικές αλλαγές δεικτών (O(hops)):
-     1) Αφαιρείς το βιβλίο από την τωρινή θέση (splice-out).
-     2) Σαρώνεις προς τα πάνω/κάτω μέχρι να βρεις τοπική θέση ως προς avg.
-     3) Εισάγεις (splice-in) πριν από τον πρώτο κόμβο με avg < δικό μου.
-
-   DISPLAY (αποτέλεσμα D):
-   - Πριν τρέξει νέα D, απελευθερώνεις την προηγούμενη μνήμη (free genre->display),
-     και θέτεις display=NULL, display_count=0 σε όλα τα genres.
-   - Η D ΓΕΜΙΖΕΙ τον πίνακα display ανά genre με έως seats(g) pointers.
-
-   ΠΟΛΥΠΛΟΚΟΤΗΤΕΣ:
-   - Insert loan: O(1)
-   - Return book με έγκυρο score: ενημέρωση sum/n/avg (O(1)) + επανατοποθέτηση σε genre (O(hops))
-   - Υπολογισμός D: μία σάρωση όλης της λίστας κάθε genre για points (O(#books_in_genre))
-     + ταξινόμηση remainders (O(#genres log #genres))
-     + επιλογή κορυφαίων ανά genre (γραμμική στα seats(g)).
-*/
 
 #endif
