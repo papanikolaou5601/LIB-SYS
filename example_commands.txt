@@ -1,0 +1,33 @@
+# Configure three display places
+S 3
+
+# Create genres: G genre_id "genre name"
+G 10 "Fiction"
+G 20 "Science"
+
+# Add books: BK book_id genre_id "book title"
+BK 101 10 "The Long Road"
+BK 102 10 "Glass Harbor"
+BK 201 20 "Small Worlds"
+
+# Add a member, loan books, then return and rate one
+M 1 "Avery Stone"
+L 1 101
+R 1 101 9 ok
+L 1 201
+R 1 201 NA ok
+
+# Print/query commands
+PG 10
+PM 1
+F "The Long Road"
+TOP 3
+AM
+
+# Allocate the configured places, then print the display
+D
+PD
+
+# Change a title and show the updated genre listing
+U 102 "Harbor Glass"
+PG 10
